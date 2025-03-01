@@ -26,6 +26,8 @@ def evaluator(model, testenc, dev, args):
 
     layers = model.model.layers
     model.model.embed_tokens = model.model.embed_tokens.to(dev)
+    if hasatter(model.model, "rotary_emb"):
+        model.model.rotary_emb = model.model.rotary_emb.to(dev)
 
     layers[0] = layers[0].to(dev)
 
