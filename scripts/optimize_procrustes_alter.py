@@ -164,7 +164,7 @@ if __name__ == "__main__":
             # Different LLM has different massive activation quantization error threshold
             if 'Mistral-7B' not in model_name:
                 threshold = 8.5
-                A = torch.where(error_A_init.reshape(-1, 1) < threshold, _A, _A * args.alpha)
+                A = torch.where(error_A_init.reshape(-1, 1) < threshold, _A  * args.alpha, _A)
                 num = torch.sum(error_A_init.reshape(-1, 1) < threshold)
             else:
                 A = torch.where(error_random.reshape(-1, 1) < error_A_init.reshape(-1, 1), _A, _A * args.alpha)
