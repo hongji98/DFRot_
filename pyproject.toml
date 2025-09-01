@@ -1,0 +1,27 @@
+[project]
+name = "dfrot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fast-hadamard-transform",
+    "gpustat>=1.1.1",
+    "lm-eval",
+    "ninja>=1.13.0",
+    "numpy>=2.3.2",
+    "torch==2.5.1",
+]
+
+[[tool.uv.index]]
+name = "tsinghua"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[tool.uv.sources]
+lm-eval = { git = "https://github.com/EleutherAI/lm-evaluation-harness.git" }
+fast-hadamard-transform = { git = "https://github.com/Dao-AILab/fast-hadamard-transform", rev = "v1.0.4.post1" }
