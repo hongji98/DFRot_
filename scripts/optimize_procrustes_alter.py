@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import tqdm
 
-sys.path.append("..")
 from utils.quant_utils import ActQuantizer
 from utils.hadamard_utils import random_hadamard_matrix
 import argparse
@@ -153,7 +152,7 @@ if __name__ == "__main__":
 
     for model_name, calibrate_file in zip(model_names, calibrate_files):
         # mkdir log_dir
-        data_dir = os.path.join(f"../rms_norm_feature_{args.rotate_mode}_{args.data_principle}", f"{args.alpha:.0f}")
+        data_dir = os.path.join(f"rms_norm_feature_{args.rotate_mode}_{args.data_principle}", f"{args.alpha:.0f}")
         os.makedirs(data_dir, exist_ok=True)
         log = open(os.path.join(data_dir, '{}_procrustes.txt'.format(model_name)), 'w')
         log_func = partial(print_log, log=log)
