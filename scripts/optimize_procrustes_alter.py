@@ -95,8 +95,24 @@ def get_data(saved_path):
     # read saved
     with open(saved_path, 'rb') as f:
         loaded_dict = pickle.load(f)
-    # stack data
-    output = np.concatenate([value[0].squeeze() for _, value in loaded_dict.items()], axis=0)
+    # stack data - filter for compatible dimensions
+    arrays = []
+    target_dim = None
+    for key, value in loaded_dict.items():
+        if isinstance(value, list) and len(value) > 0:
+            if hasattr(value[0], 'shape') and len(value[0].shape) == 3:
+                arr = value[0].squeeze()
+                if target_dim is None:
+                    target_dim = arr.shape[-1]
+                    print(f"Target dimension set to {target_dim} from {key}")
+                if arr.shape[-1] == target_dim:
+                    arrays.append(arr)
+                else:
+                    print(f"Skipping {key} with dimension {arr.shape[-1]} != {target_dim}")
+    if not arrays:
+        raise ValueError("No compatible arrays found in the data")
+    output = np.concatenate(arrays, axis=0)
+    print(f"Concatenated {len(arrays)} arrays, final shape: {output.shape}")
     return output
 
 
@@ -125,13 +141,13 @@ if __name__ == "__main__":
 
     device = 'cuda:0'
     # get your calibration_dir
-    calibration_dir = "../DFRot/calibration"
+    calibration_dir = "calibration"
     model_names = ['LLaMA-2-7B', 'LLaMA-3-8B', 'LLaMA-2-13B', "Mistral-7B", "Mistral-7B-V3", 'QWen2-7B']
-    model_names = [model_names[-1], ]
+    model_names = ["LLaMA-3-8B"]
     calibrate_files = ["Llama-2-7b-hf.pkl", "Meta-Llama-3-8B.pkl", "Llama-2-13b-hf.pkl", "Mistral-7B-v0.1.pkl",
                        "Mistral-7B-v0.3.pkl", 'Qwen2-7B.pkl']
-    calibrate_files = [calibrate_files[-1], ]
-    alter_num = 100
+    calibrate_files = ["Llama-3.1-8B-Instruct_qkv.pkl"]
+    alter_num = 10
     n_bits = 4
     clip_ratio = 1.0
 
