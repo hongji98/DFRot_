@@ -62,7 +62,7 @@ def main():
     if args.w_bits < 16:
         save_dict = {}
         if args.load_qmodel_path:  # Load Quantized Rotated Model
-            assert args.rotate, "Model should be rotated to load a quantized model!"
+            # assert args.rotate, "Model should be rotated to load a quantized model!"
             assert not args.save_qmodel_path, "Cannot save a quantized model if it is already loaded!"
             print("Load quantized model from ", args.load_qmodel_path)
             save_dict = torch.load(args.load_qmodel_path)
