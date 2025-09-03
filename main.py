@@ -8,6 +8,7 @@ from transformers import AutoTokenizer
 
 import misc
 from utils import data_utils, eval_utils, gptq_utils, hadamard_utils, model_utils, quant_utils, rotation_utils
+from utils import svd_utils
 from utils.householder_utils import get_householder_indices
 from utils.rotation_utils import get_orthogonal_matrix
 
@@ -31,6 +32,7 @@ def main():
             indices = get_householder_indices(args.indices_path)
         elif args.rotate_mode == 'orthogonal_procrustes':
             assert os.path.isfile(args.indices_path) and os.path.exists(args.indices_path)
+            print(f"loading rotate matrix from {args.indices_path}")
             indices = torch.from_numpy(np.load(args.indices_path)).to(device="cuda", dtype=torch.float64)
         Q = get_orthogonal_matrix(model.config.hidden_size, args.rotate_mode, device=misc.DEV, indices=indices)
         rotation_utils.rotate_model(model, Q)
@@ -67,25 +69,30 @@ def main():
             print("Load quantized model from ", args.load_qmodel_path)
             save_dict = torch.load(args.load_qmodel_path)
             model.load_state_dict(save_dict["model"])
+        else:
+            if args.svd:
+                # SVD-based Weight Quantization (hook point)
+                quantizers = svd_utils.svd_fwrd(model, misc.DEV, args)
+                save_dict["w_quantizers"] = quantizers
 
-        elif not args.w_rtn:  # GPTQ Weight Quantization
-            assert "llama" in args.model.lower() or "mistral" in args.model.lower() or "qwen" in args.model.lower(), \
-                "Only llama/mistral is supported for GPTQ!"
+            if not args.w_rtn:  # GPTQ Weight Quantization
+                assert "llama" in args.model.lower() or "mistral" in args.model.lower() or "qwen" in args.model.lower(), \
+                    "Only llama/mistral is supported for GPTQ!"
 
-            trainloader = data_utils.get_loaders(
-                args.cal_dataset, nsamples=args.nsamples,
-                seed=args.seed, model=args.model,
-                seqlen=model.seqlen, eval_mode=False
-            )
-            quantizers = gptq_utils.gptq_fwrd(model, trainloader, misc.DEV, args)
-            save_dict["w_quantizers"] = quantizers
-        else:  # RTN Weight Quantization
-            quantizers = gptq_utils.rtn_fwrd(model, misc.DEV, args)
-            save_dict["w_quantizers"] = quantizers
+                trainloader = data_utils.get_loaders(
+                    args.cal_dataset, nsamples=args.nsamples,
+                    seed=args.seed, model=args.model,
+                    seqlen=model.seqlen, eval_mode=False
+                )
+                quantizers = gptq_utils.gptq_fwrd(model, trainloader, misc.DEV, args)
+                save_dict["w_quantizers"] = quantizers
+            else:  # RTN Weight Quantization
+                quantizers = gptq_utils.rtn_fwrd(model, misc.DEV, args)
+                save_dict["w_quantizers"] = quantizers
 
-        if args.save_qmodel_path:
-            save_dict["model"] = model.state_dict()
-            torch.save(save_dict, args.save_qmodel_path)
+            if args.save_qmodel_path:
+                save_dict["model"] = model.state_dict()
+                torch.save(save_dict, args.save_qmodel_path)
 
     # Add Input Quantization
     if args.a_bits < 16 or args.v_bits < 16:

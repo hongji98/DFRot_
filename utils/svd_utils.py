@@ -95,8 +95,9 @@ def svd_fwrd(model, dev, args):
                 quantizer.find_params(residual)
                 residual_quant = quantizer.quantize(residual)
                 linear.weight.data.copy_(residual_quant)
-                linear.register_parameter("L1", nn.Parameter(L1))
-                linear.register_parameter("L2", nn.Parameter(L2))
+                w_dtype = linear.weight.dtype
+                linear.register_parameter("L1", nn.Parameter(L1.type(w_dtype)))
+                linear.register_parameter("L2", nn.Parameter(L2.type(w_dtype)))
 
                 # Reconstruct quantized weight
                 W_final = (W_lowrank + residual_quant).to(linear.weight.dtype)
