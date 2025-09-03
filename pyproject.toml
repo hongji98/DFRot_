@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "debugpy-run>=1.15",
     "fast-hadamard-transform",
     "gpustat>=1.1.1",
     "lm-eval",
@@ -25,3 +26,6 @@ default = true
 [tool.uv.sources]
 lm-eval = { git = "https://github.com/EleutherAI/lm-evaluation-harness.git" }
 fast-hadamard-transform = { git = "https://github.com/Dao-AILab/fast-hadamard-transform", rev = "v1.0.4.post1" }
+
+[tool.ruff]
+lint.ignore = ["E701"]
