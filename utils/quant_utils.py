@@ -287,12 +287,16 @@ class ActQuantWrapper(torch.nn.Module):
                 x = x.to(x_dtype)
             x = x.reshape(init_shape)
 
+        if hasattr(self.module, "L1"): lora_out = (x @ self.module.L2.T) @ self.module.L1.T
+
         if self.quantizer.bits < 16:  # Quantize, if needed
             self.quantizer.find_params(x)
             x = self.quantizer(x).to(x_dtype)
             self.quantizer.free()
 
         x = self.module(x).to(x_dtype)
+
+        if hasattr(self.module, "L1"): x += lora_out
 
         if self.out_quantizer.bits < 16:  # Quantize the output, if needed
             self.out_quantizer.find_params(x)

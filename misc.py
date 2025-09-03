@@ -106,8 +106,13 @@ def parser_gen():
                         help='ASymmetric weight quantization (default: False)')
     parser.add_argument('--w_rtn', action=argparse.BooleanOptionalAction, default=False,
                         help='Quantize the weights using RtN. If the w_bits < 16 and this flag is not set, we use GPTQ')
+    parser.add_argument("--svd", action=argparse.BooleanOptionalAction, default=False, help="Whether to use svd quant")
+    parser.add_argument('--svd_rank', type=int, default=32,
+                        help='Fixed rank for SVD decomposition. -1 to use energy-based rank selection')
+    parser.add_argument('--svd_energy', type=float, default=0.99,
+                        help='Energy retention threshold for automatic rank selection (when svd_rank=-1)')
     parser.add_argument('--w_clip', action=argparse.BooleanOptionalAction, default=False,
-                        help='''Clipping the weight quantization! 
+                        help='''Clipping the weight quantization!
                         We do not support arguments for clipping and we find the best clip ratio during the weight quantization''')
     parser.add_argument('--nsamples', type=int, default=128,
                         help='Number of calibration data samples for GPTQ.')
@@ -125,7 +130,7 @@ def parser_gen():
 
     # KV-Cache Quantization Arguments
     parser.add_argument('--v_bits', type=int, default=16,
-                        help='''Number of bits for V-cache quantization. 
+                        help='''Number of bits for V-cache quantization.
                         Note that quantizing the V-cache does not need any other rotation''')
     parser.add_argument('--v_groupsize', type=int, default=-1)
     parser.add_argument('--v_asym', action=argparse.BooleanOptionalAction, default=False,
@@ -134,7 +139,7 @@ def parser_gen():
                         help='Clip ratio for v-cache quantization. new_max = max * clip_ratio')
 
     parser.add_argument('--k_bits', type=int, default=16,
-                        help='''Number of bits for K-cache quantization. 
+                        help='''Number of bits for K-cache quantization.
                         Note that quantizing the K-cache needs another rotation for the keys/queries''')
     parser.add_argument('--k_groupsize', type=int, default=-1)
     parser.add_argument('--k_asym', action=argparse.BooleanOptionalAction, default=False,
