@@ -31,7 +31,6 @@ def svd_fwrd(model, dev, args):
 
     layers = model.model.layers
     torch.cuda.empty_cache()
-    quantizers = {}
 
     for i in tqdm.tqdm(range(len(layers)), desc="(SVD Quant.) Layers"):
         layer = layers[i].to(dev)
@@ -84,6 +83,11 @@ def svd_fwrd(model, dev, args):
                 W_lowrank = L1 @ L2
                 residual = W - W_lowrank
 
+                linear.weight.data.copy_(residual)
+                w_dtype = linear.weight.dtype
+                linear.register_parameter("L1", nn.Parameter(L1.type(w_dtype)))
+                linear.register_parameter("L2", nn.Parameter(L2.type(w_dtype)))
+
                 # Quantize residual using existing WeightQuantizer
                 quantizer = quant_utils.WeightQuantizer()
                 quantizer.configure(
@@ -94,13 +98,9 @@ def svd_fwrd(model, dev, args):
                 )
                 quantizer.find_params(residual)
                 residual_quant = quantizer.quantize(residual)
-                linear.weight.data.copy_(residual_quant)
-                w_dtype = linear.weight.dtype
-                linear.register_parameter("L1", nn.Parameter(L1.type(w_dtype)))
-                linear.register_parameter("L2", nn.Parameter(L2.type(w_dtype)))
 
                 # Reconstruct quantized weight
-                W_final = (W_lowrank + residual_quant).to(linear.weight.dtype)
+                W_final = (W_lowrank + residual_quant).type(linear.weight.dtype)
 
                 # Compute metrics for logging
                 energy_retained = (S[:rank]**2).sum() / (S**2).sum() if S.numel() > 0 else 1.0
@@ -108,22 +108,11 @@ def svd_fwrd(model, dev, args):
 
                 print(f"[{m}x{n}→r{rank}, E:{energy_retained:.3f}, MSE:{mse:.2e}]")
 
-                # Store quantizer and metadata
-                quantizers[f"{i}.{name}"] = {
-                    'rank': rank,
-                    'bits': layer_weight_bits,
-                    'energy': energy_retained.item() if torch.is_tensor(energy_retained) else energy_retained,
-                    'mse': mse,
-                    'quantizer': quantizer
-                }
-
                 # Cleanup
-                del W, U, S, Vh, L1, L2, W_lowrank, residual, residual_quant
+                del W, U, S, Vh, L1, L2, W_lowrank, residual
                 torch.cuda.empty_cache()
 
         # Move layer back to CPU to save memory
         layers[i] = layer.cpu()
         misc.cleanup_memory(verbos=False)
-
-    return quantizers
 

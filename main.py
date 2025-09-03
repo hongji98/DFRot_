@@ -80,9 +80,8 @@ def main():
             save_dict = torch.load(args.load_qmodel_path)
             model.load_state_dict(save_dict["model"])
         else:
-            if args.svd:
-                # SVD-based Weight Quantization (hook point)
-                svd_utils.svd_fwrd(model, misc.DEV, args)
+            # SVD-based Weight Quantization
+            if args.svd: svd_utils.svd_fwrd(model, misc.DEV, args)
 
             if not args.w_rtn:  # GPTQ Weight Quantization
                 assert "llama" in args.model.lower() or "mistral" in args.model.lower() or "qwen" in args.model.lower(), \
@@ -94,8 +93,7 @@ def main():
                     seqlen=model.seqlen, eval_mode=False
                 )
                 gptq_utils.gptq_fwrd(model, trainloader, misc.DEV, args)
-
-            gptq_utils.rtn_fwrd(model, misc.DEV, args)
+            else: gptq_utils.rtn_fwrd(model, misc.DEV, args)
 
             if args.save_qmodel_path:
                 save_dict["model"] = model.state_dict()
