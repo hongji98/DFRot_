@@ -29,7 +29,7 @@ def model_type_extractor(model):
 
 
 def skip(*args, **kwargs):
-    # This is a helper function to save time during the initialization! 
+    # This is a helper function to save time during the initialization!
     pass
 
 
@@ -60,7 +60,7 @@ def get_llama(model_name, hf_token):
     torch.nn.init.normal_ = skip
     model = LlamaForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         use_auth_token=hf_token,
         low_cpu_mem_usage=True
     )

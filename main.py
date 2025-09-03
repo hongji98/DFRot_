@@ -1,3 +1,4 @@
+from torch import nn
 import logging
 import os.path
 
@@ -67,6 +68,15 @@ def main():
             # assert args.rotate, "Model should be rotated to load a quantized model!"
             assert not args.save_qmodel_path, "Cannot save a quantized model if it is already loaded!"
             print("Load quantized model from ", args.load_qmodel_path)
+            if args.svd:
+                subset = quant_utils.find_qlayers(model, layers=[torch.nn.Linear])
+                for name in subset:
+                    if "lm_head" in name: continue
+                    linear = subset[name]
+                    c_out, c_in = linear.weight.shape
+                    w_dtype = linear.weight.dtype
+                    linear.register_parameter("L1", nn.Parameter(torch.zeros(c_out, args.svd_rank, dtype=w_dtype)))
+                    linear.register_parameter("L2", nn.Parameter(torch.zeros(args.svd_rank, c_in, dtype=w_dtype)))
             save_dict = torch.load(args.load_qmodel_path)
             model.load_state_dict(save_dict["model"])
         else:
