@@ -10,7 +10,7 @@ import tqdm
 from utils.quant_utils import ActQuantizer
 from utils.hadamard_utils import random_hadamard_matrix
 import argparse
-
+import math
 
 def to_numpy(data):
     return data.detach().cpu().numpy()
@@ -114,6 +114,66 @@ def get_data(saved_path):
     print(f"Concatenated {len(arrays)} arrays, final shape: {output.shape}")
     return output
 
+def _row_peak_metrics(X: torch.Tensor):
+    # 每行 ratio_i = max(|row|) / mean(|row|)
+    absX = X.abs()
+    row_max = absX.max(dim=1).values
+    row_mean = absX.mean(dim=1) + 1e-12
+    ratio = row_max / row_mean
+    peak_mean = float(ratio.mean())
+    log_peak_mean = float(torch.log(ratio).mean())
+    return peak_mean, log_peak_mean
+
+@torch.no_grad()
+def procrustes_step_uniform(A_cur: torch.Tensor, log_func, n_bits=4, clip_ratio=1.0, steps=1):
+    device, dtype = A_cur.device, A_cur.dtype
+    N, D = A_cur.shape
+    R_accum = torch.eye(D, device=device, dtype=dtype)
+
+    for s in range(1, steps + 1):
+        X = A_cur @ R_accum                                  # (N, D)
+        row_norms = torch.linalg.norm(X, dim=1, keepdim=True)
+        c = (row_norms / math.sqrt(D))                       # (N, 1)
+        signX = torch.where(X >= 0, torch.ones_like(X), -torch.ones_like(X))
+        B = signX * c                                        # (N, D)
+
+        C = X.T @ B
+        U, _, Vt = torch.linalg.svd(C, full_matrices=True)
+        dR = U @ Vt
+        dR = torch.linalg.qr(dR)[0].to(device=device, dtype=dtype)
+
+        R_accum = R_accum @ dR
+
+        # 打印与原版一致的“量化误差 Loss”，并追加峰度指标
+        X_now = A_cur @ R_accum
+        loss = torch.norm(X_now - quant_func(X_now, n_bits=n_bits, clip_ratio=clip_ratio))
+        peak_mean, log_peak_mean = _row_peak_metrics(X_now)
+        log_func(f"Step: {s} Loss: {loss:.5f}  |  PeakMean={peak_mean:.5f}  LogPeakMean={log_peak_mean:.5f}")
+
+    return R_accum
+
+
+@torch.no_grad()
+def procrustes_step_quant(A_cur: torch.Tensor, log_func, n_bits=4, clip_ratio=1.0, steps=1):
+    """
+    """
+    device, dtype = A_cur.device, A_cur.dtype
+    D = A_cur.shape[-1]
+    R_accum = torch.eye(D, device=device, dtype=dtype)
+
+    for s in range(1, steps + 1):
+        A_ = A_cur @ R_accum
+        B_ = quant_func(A_, n_bits=n_bits, clip_ratio=clip_ratio)
+        R = torch.linalg.qr(orthogonal_procrustes(A_, B_))[0]
+        R_accum = R_accum @ R
+
+        X_now = A_cur @ R_accum
+        loss = torch.norm(X_now - quant_func(X_now, n_bits=n_bits, clip_ratio=clip_ratio))
+        peak_mean, log_peak_mean = _row_peak_metrics(X_now)
+        log_func(f"Step: {s} Loss: {loss:.5f}  |  PeakMean={peak_mean:.5f}  LogPeakMean={log_peak_mean:.5f}")
+
+    return R_accum
+
 
 if __name__ == "__main__":
     if not torch.cuda.is_available():
@@ -145,8 +205,8 @@ if __name__ == "__main__":
     model_names = ["LLaMA-3-8B"]
     calibrate_files = ["Llama-2-7b-hf.pkl", "Meta-Llama-3-8B.pkl", "Llama-2-13b-hf.pkl", "Mistral-7B-v0.1.pkl",
                        "Mistral-7B-v0.3.pkl", 'Qwen2-7B.pkl']
-    calibrate_files = ["Llama-3.1-8B-Instruct_qkv.pkl"]
-    alter_num = 10
+    calibrate_files = ["Meta-Llama-3.1-8B-Instruct_qkv.pkl"]
+    alter_num = 100
     n_bits = 4
     clip_ratio = 1.0
 
@@ -189,11 +249,22 @@ if __name__ == "__main__":
                 f"{idx}-step the data shape is: {A.shape} {num}")
             log_func(
                 f"Initialize: {torch.norm(A @ R_optimize - quant_func(A @ R_optimize, n_bits, True, clip_ratio)):.5f}")
-            procrustes = get_best_rotate_via_procrustes(
-                A @ R_optimize, log_func, n_bits=n_bits,
+            if(0):
+                dR = get_best_rotate_via_procrustes(A @ R_optimize, log_func, n_bits=n_bits,
                 steps=optimize_max_num, clip_ratio=clip_ratio, args=args
             )
-            R_optimize = R_optimize @ procrustes
+            else:
+                K = 5
+                A_cur = A @ R_optimize
+                if idx < K:
+                    dR = procrustes_step_uniform(
+                        A_cur, log_func, n_bits=n_bits, clip_ratio=clip_ratio, steps=optimize_max_num
+                    )
+                else:
+                    dR = procrustes_step_quant(
+                        A_cur, log_func, n_bits=n_bits, clip_ratio=clip_ratio, steps=optimize_max_num
+                    )
+            R_optimize = R_optimize @ dR
             R_optimize = torch.linalg.qr(R_optimize)[0]
 
         # Get optimized R

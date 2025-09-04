@@ -60,11 +60,13 @@ def get_llama(model_name, hf_token):
     torch.nn.init.normal_ = skip
     model = LlamaForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.bfloat16,
+        #torch_dtype=torch.bfloat16,
+        #changed!
+        torch_dtype=torch.float16,
         use_auth_token=hf_token,
         low_cpu_mem_usage=True
     )
-    model.seqlen = 2048
+    model.seqlen = 1024
     logging.info('---> Loading {} Model with seq_len: {}'.format(model_name, model.seqlen))
     return model
 
@@ -79,7 +81,7 @@ def get_mistral(model_name, hf_token):
         use_auth_token=hf_token,
         low_cpu_mem_usage=True
     )
-    model.seqlen = 2048
+    model.seqlen = 1024
     logging.info('---> Loading {} Model with seq_len: {}'.format(model_name, model.seqlen))
     return model
 
@@ -94,7 +96,7 @@ def get_qwen(model_name, hf_token):
         use_auth_token=hf_token,
         low_cpu_mem_usage=True
     )
-    model.seqlen = 2048
+    model.seqlen = 1024
     logging.info('---> Loading {} Model with seq_len: {}'.format(model_name, model.seqlen))
     if model.config.tie_word_embeddings:
         model.lm_head.weight = torch.nn.Parameter(torch.empty_like(model.lm_head.weight))

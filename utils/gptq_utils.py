@@ -171,7 +171,7 @@ def gptq_fwrd(model, dataloader, dev, args):
 
     dtype = next(iter(model.parameters())).dtype
     inps = torch.zeros(
-        (args.nsamples, 2048, model.config.hidden_size), dtype=dtype, device=dev
+        (args.nsamples, 1024, model.config.hidden_size), dtype=dtype, device=dev
     )
     cache = {"i": 0, "attention_mask": None}
 

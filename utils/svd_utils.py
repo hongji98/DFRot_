@@ -24,6 +24,51 @@ def compute_rank(S, args, m, n):
         # Default: use 128 or max_rank
         return min(128, max_rank)
 
+def tune_row_fp32(
+    L1: torch.Tensor,
+    L2: torch.Tensor,
+    R: torch.Tensor,
+    i: int,
+    k_max: int = 50,
+    k: float = 4.0,
+    alpha: float = 0.2,
+) -> None:
+    if alpha < 0.01:
+        return
+
+    r = R[i]
+    for _ in range(k_max):
+        abs_mean = r.abs().mean()
+        tau_stop = k * abs_mean.item()
+        idx_max = torch.argmax(r.abs()).item()
+        r_max = r[idx_max].item()
+
+        if abs(r_max) <= tau_stop:
+            break
+
+        tau_target = 2.0 * abs_mean.item() * (1 if r_max > 0 else -1)
+        v = L2[:, idx_max]
+        denom = v.dot(v).item()
+
+        if denom:
+            delta_u = -(tau_target - r_max) / denom * v
+            r_pred = r - alpha * (delta_u @ L2)
+            if r_pred.abs().max() < r.abs().max():
+                L1[i] += alpha * delta_u
+                r.copy_(r_pred)
+                continue
+
+        col = torch.argmax(v.abs()).item()
+        if v[col]:
+            delta_u = torch.zeros_like(L1[i])
+            delta_u[col] = (tau_target - r_max) / v[col]
+            r_pred = r - alpha * (delta_u @ L2)
+            if r_pred.abs().max() < r.abs().max():
+                L1[i] += alpha * delta_u
+                r.copy_(r_pred)
+                continue
+        tune_row_fp32(L1, L2, R, i, k_max, k, alpha / 2)
+        break
 
 def svd_fwrd(model, dev, args):
     """SVD-based weight quantization with low-rank + residual decomposition"""
@@ -71,6 +116,9 @@ def svd_fwrd(model, dev, args):
                     rank = compute_rank(None, args, m, n)
 
                 rank = min(rank, *W.shape)
+                
+                #if GTSVD:
+                    
 
                 # Full SVD
                 U, S, Vh = torch.linalg.svd(W, full_matrices=False)
@@ -79,6 +127,15 @@ def svd_fwrd(model, dev, args):
                 L1 = U[:, :rank] * S[:rank].unsqueeze(0)  # U * S
                 L2 = Vh[:rank]                            # Vh
 
+                #Here add the tuning function 
+                tune = True
+                tmpresidual = W - (L1 @ L2)
+                tmpmax = tmpresidual.abs().max().item()
+                if tune:
+                    for ite in range(L1.shape[0]):
+                        tune_row_fp32(L1,L2, tmpresidual, ite)
+                                    
+                print(f"[Tuning changed maxval from {tmpmax} to {tmpresidual.abs().max().item()}]")
                 # Compute residual
                 W_lowrank = L1 @ L2
                 residual = W - W_lowrank

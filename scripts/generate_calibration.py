@@ -44,7 +44,7 @@ def main():
         nsamples=args.nsamples,
         seed=args.seed,
         model=args.model,
-        seqlen=2048,
+        seqlen=1024,
         hf_token=None,
         eval_mode=False
     )

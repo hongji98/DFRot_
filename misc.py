@@ -70,8 +70,8 @@ def parser_gen():
     parser.add_argument('--hf_token', type=str, default=None)
     parser.add_argument('--bsz', type=int, default=4,
                         help='Batch-size for PPL evaluation (default:32)')
-    parser.add_argument('--model_max_length', type=int, default=2048,
-                        help='Max sequence length for model (default:2048)')
+    parser.add_argument('--model_max_length', type=int, default=1024,
+                        help='Max sequence length for model (default:1024)')
 
     # Rotation Arguments
     parser.add_argument('--rotate', action=argparse.BooleanOptionalAction, default=False,
