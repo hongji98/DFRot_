@@ -153,6 +153,82 @@ def procrustes_step_uniform(A_cur: torch.Tensor, log_func, n_bits=4, clip_ratio=
     return R_accum
 
 
+
+@torch.no_grad()
+def procrustes_step_uniform1(
+    A_cur: torch.Tensor,
+    log_func,
+    n_bits: int = 4,
+    clip_ratio: float = 1.0,
+    steps: int = 1,
+):
+    """
+    显存友好版 Procrustes 迭代（dtype 与 A_cur 保持一致）。
+
+    逐行构造 B 的规则：
+      • |x| > 2×row_mean → sign(x) * row_mean
+      • 否则             → 对称 int-4 量化-反量化（步长 = row_max / 7）
+      • 最后行 2-范数归一到与 X 相同
+    """
+    device, dtype = A_cur.device, A_cur.dtype   # 保持原 dtype（fp32）
+    N, D = A_cur.shape
+    R_accum = torch.eye(D, device=device, dtype=dtype)
+
+    # 预分配缓冲，循环内就地覆盖
+    B_buf = torch.empty_like(A_cur)
+
+    for s in range(1, steps + 1):
+        # ---------- 前向旋转 ----------
+        X = A_cur @ R_accum                                    # (N,D)
+        absX     = X.abs()
+        row_mean = absX.mean(dim=1, keepdim=True)              # (N,1)
+        row_max  = absX.max(dim=1, keepdim=True).values        # (N,1)
+        signX    = torch.where(X >= 0, 1.0, -1.0)
+
+        # ---------- 构造 B ----------
+        mask_large = absX > 2 * row_mean                       # bool (N,D)
+        mask_small = ~mask_large
+
+        # ① 先把“小元素”原值复制进缓冲
+        B_buf.copy_(X)
+
+        # ② 大元素 → ±row_mean
+        B_buf[mask_large] = (signX * row_mean)[mask_large]
+
+        # ③ 小元素量化-反量化（按行步长，无 broadcast）
+        if mask_small.any():
+            rows, cols = mask_small.nonzero(as_tuple=True)     # 索引
+            step_rows  = (row_max / 7.0 + 1e-12).squeeze(1)    # (N,)
+            step_sel   = step_rows[rows]                       # 对应行步长
+            x_sel      = X[rows, cols]
+
+            q_int = torch.clamp((x_sel / step_sel).round(), -7, 7)
+            B_buf[rows, cols] = q_int * step_sel               # 写回
+
+        # ---------- 行 2-范数守恒 ----------
+        norm_X = torch.linalg.norm(X, dim=1, keepdim=True)     # (N,1)
+        norm_B = torch.linalg.norm(B_buf, dim=1, keepdim=True)
+        B_buf.mul_(norm_X / (norm_B + 1e-12))
+
+        # ---------- Procrustes 更新 ----------
+        C   = X.T @ B_buf
+        U, _, Vt = torch.linalg.svd(C, full_matrices=False)    # 节省显存
+        dR  = torch.linalg.qr(U @ Vt)[0].to(dtype=dtype)
+        R_accum = R_accum @ dR
+
+        # ---------- 指标打印 ----------
+        X_now = A_cur @ R_accum
+        loss  = torch.norm(
+            X_now - quant_func(X_now, n_bits=n_bits, clip_ratio=clip_ratio)
+        )
+        peak_mean, log_peak_mean = _row_peak_metrics(X_now)
+        log_func(
+            f"Step: {s}  Loss: {loss:.5f}  |  "
+            f"PeakMean={peak_mean:.5f}  LogPeakMean={log_peak_mean:.5f}"
+        )
+
+    return R_accum
+
 @torch.no_grad()
 def procrustes_step_quant(A_cur: torch.Tensor, log_func, n_bits=4, clip_ratio=1.0, steps=1):
     """
@@ -195,7 +271,7 @@ if __name__ == "__main__":
     parser.add_argument('--rotate_mode', type=str, default='hadamard', choices=['hadamard', 'random'])
     parser.add_argument('--data_principle', type=str, default='alter', choices=['alter', ])
     parser.add_argument('--alpha', type=float, default=100, help='massive activation importance')
-
+    parser.add_argument('--rotate_uniform', type=int, default=0, help = "Uniform mapping rotation, 0 for unuse, 1 for use")
     args = parser.parse_args()
 
     device = 'cuda:0'
@@ -205,9 +281,19 @@ if __name__ == "__main__":
     model_names = ["LLaMA-3-8B"]
     calibrate_files = ["Llama-2-7b-hf.pkl", "Meta-Llama-3-8B.pkl", "Llama-2-13b-hf.pkl", "Mistral-7B-v0.1.pkl",
                        "Mistral-7B-v0.3.pkl", 'Qwen2-7B.pkl']
-    calibrate_files = ["Meta-Llama-3.1-8B-Instruct_qkv.pkl"]
-    alter_num = 100
+    calibrate_files = ["llama-7b_qkv.pkl"]
+    
     n_bits = 4
+    K = 0
+    if args.rotate_uniform == 1:
+        K = 5
+        print("Using uniform mapping rotation for first K =", K, "iterations")
+    elif args.rotate_uniform == 0:
+        K = 0
+        print("Using quantization-aware rotation without uniform mapping for all iterations")
+    else:
+        raise ValueError("rotate_uniform should be 0 or 1")
+    alter_num = 100+K
     clip_ratio = 1.0
 
     for model_name, calibrate_file in zip(model_names, calibrate_files):
@@ -254,7 +340,6 @@ if __name__ == "__main__":
                 steps=optimize_max_num, clip_ratio=clip_ratio, args=args
             )
             else:
-                K = 5
                 A_cur = A @ R_optimize
                 if idx < K:
                     dR = procrustes_step_uniform(
@@ -273,10 +358,12 @@ if __name__ == "__main__":
 
         loss = torch.norm(A_init @ R_optimize - quant_func(A_init @ R_optimize, n_bits=n_bits, clip_ratio=clip_ratio))
         log_func(f"Final Quantization Error: {loss:.5f}")
-
+        peak_mean, log_peak_mean = _row_peak_metrics(A_init @ R_optimize)
+        log_func(f"Final PeakMean={peak_mean:.5f} LogPeakMean={log_peak_mean:.5f}")
         # save R to numpy
         R_optimize = to_numpy(R_optimize)
-        save_path = os.path.join(data_dir, model_name + f"-{n_bits}.npy")
+        save_path = os.path.join(data_dir, "u"+f"{K}"+"d"+f"{alter_num}"+"a4t100"+"b" + f"-{n_bits}nn.npy")
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         np.save(save_path, R_optimize)
+        print(f"Saved to {save_path}")
         log.close()

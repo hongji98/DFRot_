@@ -185,6 +185,8 @@ def main():
     metric_vals = {task: round(result.get('acc_norm,none', result['acc,none']), 4) for task, result in results.items()}
     metric_vals['acc_avg'] = round(sum(metric_vals.values()) / len(metric_vals.values()), 4)
     print(metric_vals)
+    with open("metrics.txt", "w", encoding="utf-8") as f:
+        f.write(str(metric_vals) + "\n")
     logging.info(f"{metric_vals}")
 
     if args.wandb:

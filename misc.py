@@ -111,6 +111,8 @@ def parser_gen():
                         help='Fixed rank for SVD decomposition. -1 to use energy-based rank selection')
     parser.add_argument('--svd_energy', type=float, default=0.99,
                         help='Energy retention threshold for automatic rank selection (when svd_rank=-1)')
+    parser.add_argument('--rotate_uniform', type=bool, default=False, help = "Uniform mapping rotation")
+    parser.add_argument('--svd_type', type=str, default='n', choices=['n', 'r', 'c', 'b'], help='n: no tuning; r: row tuning; c: column tuning; b: both')
     parser.add_argument('--w_clip', action=argparse.BooleanOptionalAction, default=False,
                         help='''Clipping the weight quantization!
                         We do not support arguments for clipping and we find the best clip ratio during the weight quantization''')
