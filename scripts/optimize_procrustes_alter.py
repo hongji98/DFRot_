@@ -362,7 +362,7 @@ if __name__ == "__main__":
         log_func(f"Final PeakMean={peak_mean:.5f} LogPeakMean={log_peak_mean:.5f}")
         # save R to numpy
         R_optimize = to_numpy(R_optimize)
-        save_path = os.path.join(data_dir, "u"+f"{K}"+"d"+f"{alter_num}"+"a4t100"+"b" + f"-{n_bits}nn.npy")
+        save_path = os.path.join(data_dir, "rotatemat.npy")
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         np.save(save_path, R_optimize)
         print(f"Saved to {save_path}")
